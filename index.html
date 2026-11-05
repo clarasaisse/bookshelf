@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogador de livros</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
+  video { width: 100%; border-radius: 8px; background: #000; }
+  button { padding: 12px 16px; font-size: 16px; margin: 4px 0; width: 100%; }
+  .livro { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h2>Catalogador de livros</h2>
+<video id="video" playsinline muted></video>
+<button id="iniciar">Iniciar leitura</button>
+<button id="parar">Parar</button>
+<p id="status"></p>
+<div id="lista"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const statusEl = document.getElementById('status');
+const lista = document.getElementById('lista');
+let controles = null;
+let ultimoIsbn = null;
+let ultimoTempo = 0;
+let catalogo = JSON.parse(localStorage.getItem('catalogo') || '[]');
+
+function isbn13Valido(isbn) {
+  if (!/^\d{13}$/.test(isbn)) return false;
+  let soma = 0;
+  for (let i = 0; i < 12; i++) soma += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
+  return (10 - (soma % 10)) % 10 === Number(isbn[12]);
+}
+
+async function buscarLivro(isbn) {
+  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+  const dados = await r.json();
+  if (dados.items && dados.items.length) {
+    const info = dados.items[0].volumeInfo;
+    return {
+      isbn,
+      titulo: info.title || '',
+      autores: (info.authors || []).join(', '),
+      editora: info.publisher || '',
+      ano: (info.publishedDate || '').slice(0, 4),
+      paginas: info.pageCount || ''
+    };
+  }
+  return null;
+}
+
+function mostrarLista() {
+  lista.innerHTML = '';
+  catalogo.slice().reverse().forEach(l => {
+    const div = document.createElement('div');
+    div.className = 'livro';
+    div.textContent = `${l.titulo} - ${l.autores} (${l.ano}) | ISBN ${l.isbn}`;
+    lista.appendChild(div);
+  });
+}
+
+async function processarCodigo(texto) {
+  const agora = Date.now();
+  // Evita ler o mesmo código várias vezes seguidas
+  if (texto === ultimoIsbn && agora - ultimoTempo < 3000) return;
+  ultimoIsbn = texto;
+  ultimoTempo = agora;
+
+  if (!isbn13Valido(texto)) {
+    statusEl.textContent = `Código ignorado (não é ISBN-13 válido): ${texto}`;
+    return;
+  }
+  if (catalogo.some(l => l.isbn === texto)) {
+    statusEl.textContent = 'Este livro já está no catálogo.';
+    return;
+  }
+
+  statusEl.textContent = `Buscando ${texto}...`;
+  try {
+    const livro = await buscarLivro(texto);
+    if (livro) {
+      catalogo.push(livro);
+      localStorage.setItem('catalogo', JSON.stringify(catalogo));
+      statusEl.textContent = `Cadastrado: ${livro.titulo}`;
+      mostrarLista();
+    } else {
+      statusEl.textContent = `ISBN ${texto} não encontrado na base.`;
+    }
+  } catch (e) {
+    statusEl.textContent = 'Erro ao buscar. Verifique a conexão.';
+  }
+}
+
+document.getElementById('iniciar').onclick = async () => {
+  try {
+    const leitor = new ZXing.BrowserMultiFormatReader();
+    controles = await leitor.decodeFromVideoDevice(undefined, video, (resultado) => {
+      if (resultado) processarCodigo(resultado.getText());
+    });
+    statusEl.textContent = 'Aponte a câmera para o código de barras.';
+  } catch (e) {
+    statusEl.textContent = 'Não consegui acessar a câmera: ' + e.message;
+  }
+};
+
+document.getElementById('parar').onclick = () => {
+  if (controles) controles.stop();
+  statusEl.textContent = 'Leitura parada.';
+};
+
+mostrarLista();
+</script>
+</body>
+</html>
