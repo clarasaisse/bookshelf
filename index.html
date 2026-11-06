@@ -37,19 +37,41 @@ function isbn13Valido(isbn) {
 }
 
 async function buscarLivro(isbn) {
-  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-  const dados = await r.json();
-  if (dados.items && dados.items.length) {
-    const info = dados.items[0].volumeInfo;
-    return {
-      isbn,
-      titulo: info.title || '',
-      autores: (info.authors || []).join(', '),
-      editora: info.publisher || '',
-      ano: (info.publishedDate || '').slice(0, 4),
-      paginas: info.pageCount || ''
-    };
-  }
+  // 1. BrasilAPI
+  try {
+    const r = await fetch(`https://brasilapi.com.br/api/isbn/v1/${isbn}`);
+    if (r.ok) {
+      const info = await r.json();
+      return {
+        isbn,
+        titulo: info.title || '',
+        autores: (info.authors || []).join(', '),
+        editora: info.publisher || '',
+        ano: String(info.year || ''),
+        paginas: info.page_count || ''
+      };
+    }
+  } catch (e) { /* tenta a próxima fonte */ }
+
+  // 2. Open Library
+  try {
+    const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
+    if (r.ok) {
+      const dados = await r.json();
+      const info = dados[`ISBN:${isbn}`];
+      if (info) {
+        return {
+          isbn,
+          titulo: info.title || '',
+          autores: (info.authors || []).map(a => a.name).join(', '),
+          editora: (info.publishers || []).map(p => p.name).join(', '),
+          ano: ((info.publish_date || '').match(/\d{4}/) || [''])[0],
+          paginas: info.number_of_pages || ''
+        };
+      }
+    }
+  } catch (e) { /* nada encontrado */ }
+
   return null;
 }
 
