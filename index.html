@@ -3,30 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catalogador de livros</title>
+<title>Catalogue.se</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
-  video { width: 100%; border-radius: 8px; background: #000; }
-  button { padding: 12px 16px; font-size: 16px; margin: 4px 0; width: 100%; }
+  input { width: 100%; padding: 12px; font-size: 16px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; }
+  button { padding: 12px 16px; font-size: 16px; margin: 8px 0; width: 100%; border-radius: 8px; border: 1px solid #999; background: #f5f5f5; }
   .livro { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; }
+  #status { min-height: 1.5em; }
 </style>
 </head>
 <body>
 <h2>Catalogador de livros</h2>
-<video id="video" playsinline muted></video>
-<button id="iniciar">Iniciar leitura</button>
-<button id="parar">Parar</button>
+
+<input id="isbnInput" type="text" inputmode="numeric" placeholder="Digite o ISBN (10 ou 13 dígitos)">
+<button id="buscar">Buscar e cadastrar</button>
 <p id="status"></p>
+
 <div id="lista"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
-const video = document.getElementById('video');
+// Cole aqui o URL do app da web do Apps Script (Passo 4 do guia da planilha)
+const URL_PLANILHA = 'COLE_AQUI_O_URL_DO_APP_DA_WEB';
+
 const statusEl = document.getElementById('status');
 const lista = document.getElementById('lista');
-let controles = null;
-let ultimoIsbn = null;
-let ultimoTempo = 0;
+const campo = document.getElementById('isbnInput');
 let catalogo = JSON.parse(localStorage.getItem('catalogo') || '[]');
 
 function isbn13Valido(isbn) {
@@ -34,6 +35,14 @@ function isbn13Valido(isbn) {
   let soma = 0;
   for (let i = 0; i < 12; i++) soma += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
   return (10 - (soma % 10)) % 10 === Number(isbn[12]);
+}
+
+// Converte ISBN-10 para ISBN-13 (livros mais antigos)
+function isbn10Para13(isbn10) {
+  const base = '978' + isbn10.slice(0, 9);
+  let soma = 0;
+  for (let i = 0; i < 12; i++) soma += Number(base[i]) * (i % 2 === 0 ? 1 : 3);
+  return base + ((10 - (soma % 10)) % 10);
 }
 
 async function buscarLivro(isbn) {
@@ -75,6 +84,18 @@ async function buscarLivro(isbn) {
   return null;
 }
 
+async function enviarParaPlanilha(livro) {
+  try {
+    await fetch(URL_PLANILHA, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify(livro)
+    });
+  } catch (e) {
+    console.error('Falha ao enviar para a planilha', e);
+  }
+}
+
 function mostrarLista() {
   lista.innerHTML = '';
   catalogo.slice().reverse().forEach(l => {
@@ -85,54 +106,42 @@ function mostrarLista() {
   });
 }
 
-async function processarCodigo(texto) {
-  const agora = Date.now();
-  // Evita ler o mesmo código várias vezes seguidas
-  if (texto === ultimoIsbn && agora - ultimoTempo < 3000) return;
-  ultimoIsbn = texto;
-  ultimoTempo = agora;
-
-  if (!isbn13Valido(texto)) {
-    statusEl.textContent = `Código ignorado (não é ISBN-13 válido): ${texto}`;
+async function processarIsbn(isbn) {
+  if (!isbn13Valido(isbn)) {
+    statusEl.textContent = 'ISBN inválido. Confira os dígitos.';
     return;
   }
-  if (catalogo.some(l => l.isbn === texto)) {
+  if (catalogo.some(l => l.isbn === isbn)) {
     statusEl.textContent = 'Este livro já está no catálogo.';
     return;
   }
 
-  statusEl.textContent = `Buscando ${texto}...`;
-  try {
-    const livro = await buscarLivro(texto);
-    if (livro) {
-      catalogo.push(livro);
-      localStorage.setItem('catalogo', JSON.stringify(catalogo));
-      statusEl.textContent = `Cadastrado: ${livro.titulo}`;
-      mostrarLista();
-    } else {
-      statusEl.textContent = `ISBN ${texto} não encontrado na base.`;
-    }
-  } catch (e) {
-    statusEl.textContent = 'Erro ao buscar. Verifique a conexão.';
+  statusEl.textContent = `Buscando ${isbn}...`;
+  const livro = await buscarLivro(isbn);
+
+  if (!livro) {
+    statusEl.textContent = `ISBN ${isbn} não encontrado nas bases consultadas.`;
+    return;
   }
+
+  catalogo.push(livro);
+  localStorage.setItem('catalogo', JSON.stringify(catalogo));
+  enviarParaPlanilha(livro);
+  statusEl.textContent = `Cadastrado: ${livro.titulo}`;
+  mostrarLista();
 }
 
-document.getElementById('iniciar').onclick = async () => {
-  try {
-    const leitor = new ZXing.BrowserMultiFormatReader();
-    controles = await leitor.decodeFromVideoDevice(undefined, video, (resultado) => {
-      if (resultado) processarCodigo(resultado.getText());
-    });
-    statusEl.textContent = 'Aponte a câmera para o código de barras.';
-  } catch (e) {
-    statusEl.textContent = 'Não consegui acessar a câmera: ' + e.message;
-  }
-};
+function cadastrarDigitado() {
+  let isbn = campo.value.replace(/[^0-9Xx]/g, '').toUpperCase();
+  if (isbn.length === 10) isbn = isbn10Para13(isbn.slice(0, 9));
+  campo.value = '';
+  processarIsbn(isbn);
+}
 
-document.getElementById('parar').onclick = () => {
-  if (controles) controles.stop();
-  statusEl.textContent = 'Leitura parada.';
-};
+document.getElementById('buscar').onclick = cadastrarDigitado;
+campo.addEventListener('keydown', e => {
+  if (e.key === 'Enter') cadastrarDigitado();
+});
 
 mostrarLista();
 </script>
