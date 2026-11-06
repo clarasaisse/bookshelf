@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catalogue.se</title>
+<title>Catalogador de livros</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
   input { width: 100%; padding: 12px; font-size: 16px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; }
@@ -22,13 +22,15 @@
 <div id="lista"></div>
 
 <script>
-// Cole aqui o URL do app da web do Apps Script (Passo 4 do guia da planilha)
+// Cole aqui o URL do app da web do Apps Script
 const URL_PLANILHA = 'https://script.google.com/macros/s/AKfycbzqMwYg17lnCKe6uaJhSNipbGQldsQBAPjTFv3zX4xz1cs5FmGHf8kWNE7Ibh4Z0sgbbg/exec';
 
 const statusEl = document.getElementById('status');
 const lista = document.getElementById('lista');
 const campo = document.getElementById('isbnInput');
 let catalogo = JSON.parse(localStorage.getItem('catalogo') || '[]');
+
+// ---------- ISBN ----------
 
 function isbn13Valido(isbn) {
   if (!/^\d{13}$/.test(isbn)) return false;
@@ -37,13 +39,30 @@ function isbn13Valido(isbn) {
   return (10 - (soma % 10)) % 10 === Number(isbn[12]);
 }
 
-// Converte ISBN-10 para ISBN-13 (livros mais antigos)
-function isbn10Para13(isbn10) {
-  const base = '978' + isbn10.slice(0, 9);
+// Recebe os 9 primeiros dígitos do ISBN-10 e devolve o ISBN-13 completo
+function isbn10Para13(isbn9) {
+  const base = '978' + isbn9;
   let soma = 0;
   for (let i = 0; i < 12; i++) soma += Number(base[i]) * (i % 2 === 0 ? 1 : 3);
   return base + ((10 - (soma % 10)) % 10);
 }
+
+// País de publicação: indicado pelo prefixo registrado da editora
+function paisDaEditora(isbn) {
+  const prefixos = [
+    ['97885', 'Brasil'], ['97865', 'Brasil'],
+    ['978972', 'Portugal'], ['978989', 'Portugal'],
+    ['97884', 'Espanha'], ['97888', 'Itália'],
+    ['9782', 'França'], ['9783', 'Alemanha'],
+    ['9784', 'Japão'], ['9787', 'China']
+  ];
+  for (const [prefixo, pais] of prefixos) {
+    if (isbn.startsWith(prefixo)) return pais;
+  }
+  return '';
+}
+
+// ---------- Busca do livro ----------
 
 async function buscarLivro(isbn) {
   // 1. BrasilAPI
@@ -84,6 +103,55 @@ async function buscarLivro(isbn) {
   return null;
 }
 
+// ---------- País do autor (Wikidata) ----------
+
+async function consultaWikidata(url) {
+  return (await fetch(url + '&origin=*')).json();
+}
+
+async function entidade(id, props) {
+  const dados = await consultaWikidata(
+    `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${id}&props=${props}&languages=pt|en&format=json`
+  );
+  return dados.entities[id];
+}
+
+function rotulo(entidadeWikidata) {
+  const l = entidadeWikidata.labels || {};
+  return (l.pt || l.en || {}).value || '';
+}
+
+// Prioriza o país de nascimento; se não houver, usa a cidadania
+async function paisDoAutor(nome) {
+  if (!nome) return '';
+  try {
+    const busca = await consultaWikidata(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(nome)}&language=en&type=item&limit=5&format=json`
+    );
+    for (const item of busca.search || []) {
+      const autor = await entidade(item.id, 'claims');
+      const claims = autor.claims || {};
+      if (!claims.P27 && !claims.P19) continue;
+
+      if (claims.P19) {
+        const lugar = await entidade(claims.P19[0].mainsnak.datavalue.value.id, 'claims');
+        if (lugar.claims?.P17) {
+          const idPais = lugar.claims.P17[0].mainsnak.datavalue.value.id;
+          const nomePais = rotulo(await entidade(idPais, 'labels'));
+          if (nomePais) return nomePais;
+        }
+      }
+      if (claims.P27) {
+        const idPais = claims.P27[0].mainsnak.datavalue.value.id;
+        return rotulo(await entidade(idPais, 'labels'));
+      }
+    }
+  } catch (e) { /* sem resultado */ }
+  return '';
+}
+
+// ---------- Planilha e lista ----------
+
 async function enviarParaPlanilha(livro) {
   try {
     await fetch(URL_PLANILHA, {
@@ -106,6 +174,8 @@ function mostrarLista() {
   });
 }
 
+// ---------- Fluxo principal ----------
+
 async function processarIsbn(isbn) {
   if (!isbn13Valido(isbn)) {
     statusEl.textContent = 'ISBN inválido. Confira os dígitos.';
@@ -123,6 +193,10 @@ async function processarIsbn(isbn) {
     statusEl.textContent = `ISBN ${isbn} não encontrado nas bases consultadas.`;
     return;
   }
+
+  statusEl.textContent = 'Buscando país do autor...';
+  livro.paisAutor = await paisDoAutor(livro.autores.split(',')[0].trim());
+  livro.paisPublicacao = paisDaEditora(isbn);
 
   catalogo.push(livro);
   localStorage.setItem('catalogo', JSON.stringify(catalogo));
