@@ -17,7 +17,6 @@
     --acento: #9c4a2f;
     --acento-claro: #f3e4dc;
     --card: #fffdf8;
-    --vazio-mapa: #e9e2d4;
   }
   * { box-sizing: border-box; }
   body {
@@ -131,7 +130,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // Cole aqui o URL do app da web do Apps Script
-const URL_PLANILHA = 'COLE_AQUI_O_URL_DO_APP_DA_WEB';
+const URL_PLANILHA = 'https://script.google.com/macros/s/AKfycbxlXyIy31p9__EvJ2pEwPRyuA2y-TDw_rHyMOsONiMC-Kj5PSe10j8ss7Ws8zHIaCdmLA/exec';
 
 // Fronteiras dos países (GeoJSON público)
 const URL_PAISES = 'https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/data/countries.geojson';
@@ -171,7 +170,7 @@ function paisDaEditora(isbn) {
   return '';
 }
 
-// ---------- Nome do país -> código ISO (para pintar o mapa) ----------
+// ---------- Nome do país -> código ISO ----------
 
 const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -179,9 +178,9 @@ function normalizar(texto) {
   return (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-// Dicionário: nome (pt ou en, sem acento) -> código de 2 letras
 const nomeParaIso = {};
 (function montarDicionario() {
+  // Nomes oficiais em português e inglês, gerados pelo próprio navegador
   for (const idioma of ['pt', 'en']) {
     const dn = new Intl.DisplayNames([idioma], { type: 'region' });
     for (const a of LETRAS) {
@@ -192,34 +191,40 @@ const nomeParaIso = {};
       }
     }
   }
-  // Apelidos comuns em nomes de autores (Wikidata) e de mapas
-  const apelidos = {
+  // Apelidos comuns em nomes de autores e de mapas
+  Object.assign(nomeParaIso, {
     'eua': 'US', 'usa': 'US', 'estados unidos da america': 'US',
-    'united states of america': 'US', 'inglaterra': 'GB', 'escocia': 'GB',
-    'pais de gales': 'GB', 'irlanda do norte': 'GB',
+    'united states': 'US', 'united states of america': 'US',
+    'inglaterra': 'GB', 'escocia': 'GB', 'pais de gales': 'GB', 'irlanda do norte': 'GB',
+    'england': 'GB', 'scotland': 'GB', 'wales': 'GB', 'northern ireland': 'GB',
     'coreia do sul': 'KR', 'coreia do norte': 'KP', 'republic of korea': 'KR',
-    'russia': 'RU', 'ira': 'IR', 'siria': 'SY', 'turquia': 'TR', 'turkiye': 'TR',
-    'republica tcheca': 'CZ', 'czechia': 'CZ', 'vietna': 'VN', 'bolivia': 'BO',
-    'venezuela': 'VE', 'tanzania': 'TZ', 'congo': 'CD', 'republica democratica do congo': 'CD',
-    'democratic republic of the congo': 'CD', 'myanmar': 'MM', 'birmania': 'MM',
-    'macedonia do norte': 'MK', 'north macedonia': 'MK', 'eslovaquia': 'SK'
-  };
-  Object.assign(nomeParaIso, apelidos);
+    'south korea': 'KR', 'north korea': 'KP',
+    'russia': 'RU', 'federacao russa': 'RU', 'siria': 'SY', 'turquia': 'TR', 'turkiye': 'TR',
+    'republica tcheca': 'CZ', 'czechia': 'CZ', 'vietna': 'VN',
+    'tanzania': 'TZ', 'republica democratica do congo': 'CD',
+    'democratic republic of the congo': 'CD', 'birmania': 'MM',
+    'macedonia do norte': 'MK', 'north macedonia': 'MK', 'eslovaquia': 'SK',
+    'ira': 'IR', 'iran': 'IR', 'bolivia': 'BO', 'venezuela': 'VE'
+  });
 })();
 
 function isoDoNome(nome) {
   return nomeParaIso[normalizar(nome)] || null;
 }
 
-// Descobre o código ISO de 2 letras de uma feature do mapa
+// Descobre o código ISO de uma feature do mapa: tenta o código, depois os nomes
 function isoDaFeature(feature) {
   const p = feature.properties || {};
-  const candidatos = [p.ISO_A2, p.iso_a2, p['ISO3166-1-Alpha-2'], p.ISO_A2_EH];
-  for (const c of candidatos) {
-    if (typeof c === 'string' && /^[A-Z]{2}$/.test(c)) return c;
+  for (const valor of Object.values(p)) {
+    if (typeof valor === 'string' && /^[A-Z]{2}$/.test(valor)) return valor;
   }
-  // Se o arquivo não trouxer o código, usa o nome do país
-  return isoDoNome(p.name || p.ADMIN || p.NAME || '');
+  for (const valor of Object.values(p)) {
+    if (typeof valor === 'string') {
+      const iso = isoDoNome(valor);
+      if (iso) return iso;
+    }
+  }
+  return null;
 }
 
 // ---------- Busca do livro ----------
@@ -307,16 +312,40 @@ async function paisDoAutor(nome) {
   return '';
 }
 
+// Livros antigos podem ter o país em outros campos; usa o que existir
+function paisDoLivro(l) {
+  return l.paisAutor || l.paisNascimento || l.paisCidadania || '';
+}
+
+// Completa o país de livros que ainda não o têm (sem reenviar para a planilha)
+async function completarPaises() {
+  let mudou = false;
+  for (const livro of catalogo) {
+    if (paisDoLivro(livro)) {
+      if (!livro.paisAutor) { livro.paisAutor = paisDoLivro(livro); mudou = true; }
+      continue;
+    }
+    if (livro.paisBuscado) continue;
+    livro.paisAutor = await paisDoAutor((livro.autores || '').split(',')[0].trim());
+    livro.paisBuscado = true;
+    mudou = true;
+  }
+  if (mudou) {
+    localStorage.setItem('catalogo', JSON.stringify(catalogo));
+    atualizarTela();
+  }
+}
+
 // ---------- Mapa ----------
 
 const mapa = L.map('mapa', { minZoom: 1, worldCopyJump: true }).setView([20, 0], 2);
 let camadaPaises = null;
 
-// Dicionário: código ISO -> títulos de livros daquele país
+// Código ISO -> títulos de livros daquele país
 function titulosPorIso() {
   const mapaIso = {};
   for (const livro of catalogo) {
-    const iso = isoDoNome(livro.paisAutor);
+    const iso = isoDoNome(paisDoLivro(livro));
     if (!iso) continue;
     (mapaIso[iso] = mapaIso[iso] || []).push(livro.titulo);
   }
@@ -338,8 +367,6 @@ function estiloPais(feature) {
 async function carregarMapa() {
   try {
     const geo = await (await fetch(URL_PAISES)).json();
-    const semCodigo = geo.features.filter(f => !isoDaFeature(f)).map(f => f.properties.name || f.properties.ADMIN);
-    console.log('Países do mapa sem correspondência:', semCodigo);
     camadaPaises = L.geoJSON(geo, {
       style: estiloPais,
       onEachFeature: (feature, layer) => {
@@ -365,7 +392,7 @@ function atualizarMapa() {
 
 function atualizarResumo() {
   document.getElementById('totalLivros').textContent = catalogo.length;
-  const paises = new Set(catalogo.map(l => isoDoNome(l.paisAutor)).filter(Boolean));
+  const paises = new Set(catalogo.map(l => isoDoNome(paisDoLivro(l))).filter(Boolean));
   document.getElementById('totalPaises').textContent = paises.size;
 }
 
@@ -387,7 +414,7 @@ function mostrarLista() {
     const titulo = document.createElement('strong');
     titulo.textContent = l.titulo;
     const detalhe = document.createElement('small');
-    detalhe.textContent = [l.autores, l.paisAutor, l.ano].filter(Boolean).join(' · ');
+    detalhe.textContent = [l.autores, paisDoLivro(l), l.ano].filter(Boolean).join(' · ');
     div.append(titulo, detalhe);
     lista.appendChild(div);
   });
@@ -398,7 +425,7 @@ function atualizarTela() {
   atualizarMapa();
 }
 
-// ---------- Fluxo principal ----------
+// ---------- Planilha ----------
 
 async function enviarParaPlanilha(livro) {
   try {
@@ -411,6 +438,8 @@ async function enviarParaPlanilha(livro) {
     console.error('Falha ao enviar para a planilha', e);
   }
 }
+
+// ---------- Fluxo principal ----------
 
 async function processarIsbn(isbn) {
   if (!isbn13Valido(isbn)) {
@@ -432,6 +461,7 @@ async function processarIsbn(isbn) {
 
   statusEl.textContent = 'Buscando país do autor...';
   livro.paisAutor = await paisDoAutor(livro.autores.split(',')[0].trim());
+  livro.paisBuscado = true;
   livro.paisPublicacao = paisDaEditora(isbn);
 
   await enviarParaPlanilha(livro);
@@ -471,7 +501,11 @@ document.getElementById('reenviar').onclick = async () => {
   statusEl.textContent = 'Envio concluído. Confira a planilha.';
 };
 
-carregarMapa().then(atualizarTela);
+// Inicialização: carrega o mapa, mostra a lista e completa países antigos
+carregarMapa().then(() => {
+  atualizarTela();
+  completarPaises();
+});
 </script>
 </body>
 </html>
