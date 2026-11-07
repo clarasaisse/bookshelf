@@ -3,28 +3,228 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catalogador de livros</title>
+<title>Minha biblioteca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; }
-  input { width: 100%; padding: 12px; font-size: 16px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; }
-  button { padding: 12px 16px; font-size: 16px; margin: 8px 0; width: 100%; border-radius: 8px; border: 1px solid #999; background: #f5f5f5; }
-  .livro { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 8px 0; }
-  #status { min-height: 1.5em; }
+  :root {
+    --papel: #f7f3ea;
+    --tinta: #2b2622;
+    --suave: #7a6f64;
+    --borda: #e3dccd;
+    --acento: #9c4a2f;
+    --acento-claro: #f3e4dc;
+    --card: #fffdf8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--papel);
+    color: var(--tinta);
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+  }
+
+  header { margin-bottom: 28px; }
+
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 2.2rem;
+    margin: 0 0 4px;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitulo {
+    color: var(--suave);
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  .resumo {
+    display: flex;
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .resumo div {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .resumo strong {
+    display: block;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.6rem;
+    color: var(--acento);
+  }
+
+  .resumo span {
+    font-size: 0.8rem;
+    color: var(--suave);
+  }
+
+  .busca {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(43, 38, 34, 0.04);
+  }
+
+  input {
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 16px;
+    font-family: inherit;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--tinta);
+    outline: none;
+  }
+
+  input:focus {
+    border-color: var(--acento);
+    box-shadow: 0 0 0 3px var(--acento-claro);
+  }
+
+  .botoes {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  button {
+    flex: 1;
+    padding: 13px 14px;
+    font-size: 15px;
+    font-family: inherit;
+    font-weight: 500;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.05s, background 0.2s;
+  }
+
+  button:active { transform: scale(0.98); }
+
+  #buscar {
+    background: var(--acento);
+    color: #fff;
+    border: none;
+  }
+
+  #buscar:hover { background: #843d27; }
+
+  #reenviar {
+    background: transparent;
+    color: var(--acento);
+    border: 1px solid var(--acento);
+  }
+
+  #reenviar:hover { background: var(--acento-claro); }
+
+  #status {
+    min-height: 1.4em;
+    font-size: 0.9rem;
+    color: var(--suave);
+    margin: 0 0 20px 4px;
+  }
+
+  #lista {
+    display: grid;
+    gap: 12px;
+  }
+
+  .livro {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-left: 4px solid var(--acento);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+
+  .livro h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    margin: 0 0 4px;
+    line-height: 1.3;
+  }
+
+  .livro .autor {
+    margin: 0 0 10px;
+    color: var(--suave);
+    font-size: 0.9rem;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    font-size: 0.75rem;
+    background: var(--papel);
+    border: 1px solid var(--borda);
+    border-radius: 999px;
+    padding: 3px 10px;
+    color: var(--tinta);
+  }
+
+  .vazio {
+    text-align: center;
+    color: var(--suave);
+    padding: 32px 0;
+  }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 1.8rem; }
+    .botoes { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
-<h2>Catalogador de livros</h2>
+<div class="container">
+  <header>
+    <h1>Minha biblioteca</h1>
+    <p class="subtitulo">Digite o ISBN de um livro para cadastrá-lo.</p>
+    <div class="resumo">
+      <div><strong id="totalLivros">0</strong><span>livros</span></div>
+      <div><strong id="totalPaises">0</strong><span>países de autores</span></div>
+    </div>
+  </header>
 
-<input id="isbnInput" type="text" inputmode="numeric" placeholder="Digite o ISBN (10 ou 13 dígitos)">
-<button id="buscar">Buscar e cadastrar</button>
-<button id="reenviar">Enviar pendentes para a planilha</button>
-<p id="status"></p>
+  <section class="busca">
+    <input id="isbnInput" type="text" inputmode="numeric" placeholder="ISBN (10 ou 13 dígitos)">
+    <div class="botoes">
+      <button id="buscar">Buscar e cadastrar</button>
+      <button id="reenviar">Enviar pendentes</button>
+    </div>
+  </section>
 
-<div id="lista"></div>
+  <p id="status"></p>
+
+  <div id="lista"></div>
+</div>
 
 <script>
 // Cole aqui o URL do app da web do Apps Script
-const URL_PLANILHA = 'https://script.google.com/macros/s/AKfycbxlXyIy31p9__EvJ2pEwPRyuA2y-TDw_rHyMOsONiMC-Kj5PSe10j8ss7Ws8zHIaCdmLA/exec';
+const URL_PLANILHA = 'COLE_AQUI_O_URL_DO_APP_DA_WEB';
 
 const statusEl = document.getElementById('status');
 const lista = document.getElementById('lista');
@@ -40,7 +240,6 @@ function isbn13Valido(isbn) {
   return (10 - (soma % 10)) % 10 === Number(isbn[12]);
 }
 
-// Recebe os 9 primeiros dígitos do ISBN-10 e devolve o ISBN-13 completo
 function isbn10Para13(isbn9) {
   const base = '978' + isbn9;
   let soma = 0;
@@ -48,7 +247,6 @@ function isbn10Para13(isbn9) {
   return base + ((10 - (soma % 10)) % 10);
 }
 
-// País de publicação: indicado pelo prefixo registrado da editora
 function paisDaEditora(isbn) {
   const prefixos = [
     ['97885', 'Brasil'], ['97865', 'Brasil'],
@@ -66,7 +264,6 @@ function paisDaEditora(isbn) {
 // ---------- Busca do livro ----------
 
 async function buscarLivro(isbn) {
-  // 1. BrasilAPI
   try {
     const r = await fetch(`https://brasilapi.com.br/api/isbn/v1/${isbn}`);
     if (r.ok) {
@@ -82,7 +279,6 @@ async function buscarLivro(isbn) {
     }
   } catch (e) { /* tenta a próxima fonte */ }
 
-  // 2. Open Library
   try {
     const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
     if (r.ok) {
@@ -122,7 +318,6 @@ function rotulo(entidadeWikidata) {
   return (l.pt || l.en || {}).value || '';
 }
 
-// Prioriza o país de nascimento; se não houver, usa a cidadania
 async function paisDoAutor(nome) {
   if (!nome) return '';
   try {
@@ -165,13 +360,50 @@ async function enviarParaPlanilha(livro) {
   }
 }
 
+function atualizarResumo() {
+  document.getElementById('totalLivros').textContent = catalogo.length;
+  const paises = new Set(catalogo.map(l => l.paisAutor).filter(Boolean));
+  document.getElementById('totalPaises').textContent = paises.size;
+}
+
+function criarChip(texto) {
+  const span = document.createElement('span');
+  span.className = 'chip';
+  span.textContent = texto;
+  return span;
+}
+
 function mostrarLista() {
   lista.innerHTML = '';
+  atualizarResumo();
+
+  if (!catalogo.length) {
+    const p = document.createElement('p');
+    p.className = 'vazio';
+    p.textContent = 'Nenhum livro cadastrado ainda.';
+    lista.appendChild(p);
+    return;
+  }
+
   catalogo.slice().reverse().forEach(l => {
-    const div = document.createElement('div');
-    div.className = 'livro';
-    div.textContent = `${l.titulo} - ${l.autores} (${l.ano}) | ISBN ${l.isbn}`;
-    lista.appendChild(div);
+    const card = document.createElement('article');
+    card.className = 'livro';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = l.titulo;
+
+    const autor = document.createElement('p');
+    autor.className = 'autor';
+    autor.textContent = [l.autores, l.ano].filter(Boolean).join(' · ');
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    if (l.paisAutor) chips.appendChild(criarChip(l.paisAutor));
+    if (l.editora) chips.appendChild(criarChip(l.editora));
+    if (l.paginas) chips.appendChild(criarChip(`${l.paginas} págs.`));
+
+    card.append(h3, autor, chips);
+    lista.appendChild(card);
   });
 }
 
