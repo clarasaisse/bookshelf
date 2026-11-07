@@ -75,18 +75,19 @@
     outline: none;
   }
   input:focus { border-color: var(--acento); box-shadow: 0 0 0 3px var(--acento-claro); }
-  .botoes { display: flex; gap: 10px; margin-top: 10px; }
   button {
-    flex: 1;
+    width: 100%;
+    margin-top: 10px;
     padding: 12px 14px;
     font-size: 15px;
     font-family: inherit;
     font-weight: 500;
     border-radius: 12px;
+    border: none;
+    background: var(--acento);
+    color: #fff;
     cursor: pointer;
   }
-  #buscar { background: var(--acento); color: #fff; border: none; }
-  #reenviar { background: transparent; color: var(--acento); border: 1px solid var(--acento); }
 
   #status { min-height: 1.4em; font-size: 0.9rem; color: var(--suave); margin: 0 0 16px 4px; }
 
@@ -117,10 +118,7 @@
 
   <section class="busca">
     <input id="isbnInput" type="text" inputmode="numeric" placeholder="ISBN (10 ou 13 dígitos)">
-    <div class="botoes">
-      <button id="buscar">Buscar e cadastrar</button>
-      <button id="reenviar">Enviar pendentes</button>
-    </div>
+    <button id="buscar">Buscar e cadastrar</button>
   </section>
 
   <p id="status"></p>
@@ -130,7 +128,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // Cole aqui o URL do app da web do Apps Script
-const URL_PLANILHA = 'https://script.google.com/macros/s/AKfycbxlXyIy31p9__EvJ2pEwPRyuA2y-TDw_rHyMOsONiMC-Kj5PSe10j8ss7Ws8zHIaCdmLA/exec';
+const URL_PLANILHA = 'https://script.google.com/macros/s/AKfycbz7PnY1OGQbWeIwoFTwIUPacZGkpa6rtt8b-2kp4jL36m1DOj-76Oa_MS11Vnvl58qfyA/exec';
 
 // Fronteiras dos países (GeoJSON público)
 const URL_PAISES = 'https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/data/countries.geojson';
@@ -138,7 +136,9 @@ const URL_PAISES = 'https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/da
 const statusEl = document.getElementById('status');
 const lista = document.getElementById('lista');
 const campo = document.getElementById('isbnInput');
-let catalogo = JSON.parse(localStorage.getItem('catalogo') || '[]');
+
+// Os livros vêm sempre da planilha
+let catalogo = [];
 
 // ---------- ISBN ----------
 
@@ -180,7 +180,6 @@ function normalizar(texto) {
 
 const nomeParaIso = {};
 (function montarDicionario() {
-  // Nomes oficiais em português e inglês, gerados pelo próprio navegador
   for (const idioma of ['pt', 'en']) {
     const dn = new Intl.DisplayNames([idioma], { type: 'region' });
     for (const a of LETRAS) {
@@ -191,7 +190,6 @@ const nomeParaIso = {};
       }
     }
   }
-  // Apelidos comuns em nomes de autores e de mapas
   Object.assign(nomeParaIso, {
     'eua': 'US', 'usa': 'US', 'estados unidos da america': 'US',
     'united states': 'US', 'united states of america': 'US',
@@ -212,7 +210,6 @@ function isoDoNome(nome) {
   return nomeParaIso[normalizar(nome)] || null;
 }
 
-// Descobre o código ISO de uma feature do mapa: tenta o código, depois os nomes
 function isoDaFeature(feature) {
   const p = feature.properties || {};
   for (const valor of Object.values(p)) {
@@ -227,7 +224,7 @@ function isoDaFeature(feature) {
   return null;
 }
 
-// ---------- Busca do livro ----------
+// ---------- Busca do livro (para cadastrar novos) ----------
 
 async function buscarLivro(isbn) {
   try {
@@ -312,30 +309,6 @@ async function paisDoAutor(nome) {
   return '';
 }
 
-// Livros antigos podem ter o país em outros campos; usa o que existir
-function paisDoLivro(l) {
-  return l.paisAutor || l.paisNascimento || l.paisCidadania || '';
-}
-
-// Completa o país de livros que ainda não o têm (sem reenviar para a planilha)
-async function completarPaises() {
-  let mudou = false;
-  for (const livro of catalogo) {
-    if (paisDoLivro(livro)) {
-      if (!livro.paisAutor) { livro.paisAutor = paisDoLivro(livro); mudou = true; }
-      continue;
-    }
-    if (livro.paisBuscado) continue;
-    livro.paisAutor = await paisDoAutor((livro.autores || '').split(',')[0].trim());
-    livro.paisBuscado = true;
-    mudou = true;
-  }
-  if (mudou) {
-    localStorage.setItem('catalogo', JSON.stringify(catalogo));
-    atualizarTela();
-  }
-}
-
 // ---------- Mapa ----------
 
 const mapa = L.map('mapa', { minZoom: 1, worldCopyJump: true }).setView([20, 0], 2);
@@ -345,7 +318,7 @@ let camadaPaises = null;
 function titulosPorIso() {
   const mapaIso = {};
   for (const livro of catalogo) {
-    const iso = isoDoNome(paisDoLivro(livro));
+    const iso = isoDoNome(livro.paisAutor);
     if (!iso) continue;
     (mapaIso[iso] = mapaIso[iso] || []).push(livro.titulo);
   }
@@ -392,7 +365,7 @@ function atualizarMapa() {
 
 function atualizarResumo() {
   document.getElementById('totalLivros').textContent = catalogo.length;
-  const paises = new Set(catalogo.map(l => isoDoNome(paisDoLivro(l))).filter(Boolean));
+  const paises = new Set(catalogo.map(l => isoDoNome(l.paisAutor)).filter(Boolean));
   document.getElementById('totalPaises').textContent = paises.size;
 }
 
@@ -414,7 +387,7 @@ function mostrarLista() {
     const titulo = document.createElement('strong');
     titulo.textContent = l.titulo;
     const detalhe = document.createElement('small');
-    detalhe.textContent = [l.autores, paisDoLivro(l), l.ano].filter(Boolean).join(' · ');
+    detalhe.textContent = [l.autores, l.paisAutor, l.ano].filter(Boolean).join(' · ');
     div.append(titulo, detalhe);
     lista.appendChild(div);
   });
@@ -426,6 +399,15 @@ function atualizarTela() {
 }
 
 // ---------- Planilha ----------
+
+async function carregarDaPlanilha() {
+  try {
+    const r = await fetch(URL_PLANILHA);
+    catalogo = await r.json();
+  } catch (e) {
+    statusEl.textContent = 'Não consegui ler a planilha. Verifique a conexão.';
+  }
+}
 
 async function enviarParaPlanilha(livro) {
   try {
@@ -460,15 +442,16 @@ async function processarIsbn(isbn) {
   }
 
   statusEl.textContent = 'Buscando país do autor...';
-  livro.paisAutor = await paisDoAutor(livro.autores.split(',')[0].trim());
-  livro.paisBuscado = true;
+  livro.paisAutor = await paisDoAutor((livro.autores || '').split(',')[0].trim());
   livro.paisPublicacao = paisDaEditora(isbn);
 
+  statusEl.textContent = 'Salvando na planilha...';
   await enviarParaPlanilha(livro);
-  livro.enviado = true;
 
-  catalogo.push(livro);
-  localStorage.setItem('catalogo', JSON.stringify(catalogo));
+  // O envio não confirma o resultado, então espera e relê a planilha
+  await new Promise(r => setTimeout(r, 2500));
+  await carregarDaPlanilha();
+
   statusEl.textContent = `Cadastrado: ${livro.titulo}`;
   atualizarTela();
 }
@@ -485,27 +468,14 @@ campo.addEventListener('keydown', e => {
   if (e.key === 'Enter') cadastrarDigitado();
 });
 
-document.getElementById('reenviar').onclick = async () => {
-  const pendentes = catalogo.filter(l => !l.enviado);
-  if (!pendentes.length) {
-    statusEl.textContent = 'Nenhum livro pendente.';
-    return;
-  }
-  statusEl.textContent = `Enviando ${pendentes.length} livro(s)...`;
-  for (const livro of pendentes) {
-    await enviarParaPlanilha(livro);
-    livro.enviado = true;
-    localStorage.setItem('catalogo', JSON.stringify(catalogo));
-    await new Promise(r => setTimeout(r, 500));
-  }
-  statusEl.textContent = 'Envio concluído. Confira a planilha.';
-};
-
-// Inicialização: carrega o mapa, mostra a lista e completa países antigos
-carregarMapa().then(() => {
-  atualizarTela();
-  completarPaises();
-});
+// Inicialização: mapa e livros da planilha
+statusEl.textContent = 'Carregando...';
+carregarMapa()
+  .then(carregarDaPlanilha)
+  .then(() => {
+    atualizarTela();
+    statusEl.textContent = '';
+  });
 </script>
 </body>
 </html>
