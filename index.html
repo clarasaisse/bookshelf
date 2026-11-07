@@ -215,6 +215,12 @@ function cadastrarDigitado() {
   processarIsbn(isbn);
 }
 
+document.getElementById('buscar').onclick = cadastrarDigitado;
+
+campo.addEventListener('keydown', e => {
+  if (e.key === 'Enter') cadastrarDigitado();
+});
+
 document.getElementById('reenviar').onclick = async () => {
   const pendentes = catalogo.filter(l => !l.enviado);
   if (!pendentes.length) {
