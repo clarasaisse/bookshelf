@@ -17,6 +17,7 @@
 
 <input id="isbnInput" type="text" inputmode="numeric" placeholder="Digite o ISBN (10 ou 13 dígitos)">
 <button id="buscar">Buscar e cadastrar</button>
+<button id="reenviar">Enviar pendentes para a planilha</button>
 <p id="status"></p>
 
 <div id="lista"></div>
@@ -198,9 +199,11 @@ async function processarIsbn(isbn) {
   livro.paisAutor = await paisDoAutor(livro.autores.split(',')[0].trim());
   livro.paisPublicacao = paisDaEditora(isbn);
 
+  await enviarParaPlanilha(livro);
+  livro.enviado = true;
+
   catalogo.push(livro);
   localStorage.setItem('catalogo', JSON.stringify(catalogo));
-  enviarParaPlanilha(livro);
   statusEl.textContent = `Cadastrado: ${livro.titulo}`;
   mostrarLista();
 }
@@ -212,10 +215,21 @@ function cadastrarDigitado() {
   processarIsbn(isbn);
 }
 
-document.getElementById('buscar').onclick = cadastrarDigitado;
-campo.addEventListener('keydown', e => {
-  if (e.key === 'Enter') cadastrarDigitado();
-});
+document.getElementById('reenviar').onclick = async () => {
+  const pendentes = catalogo.filter(l => !l.enviado);
+  if (!pendentes.length) {
+    statusEl.textContent = 'Nenhum livro pendente.';
+    return;
+  }
+  statusEl.textContent = `Enviando ${pendentes.length} livro(s)...`;
+  for (const livro of pendentes) {
+    await enviarParaPlanilha(livro);
+    livro.enviado = true;
+    localStorage.setItem('catalogo', JSON.stringify(catalogo));
+    await new Promise(r => setTimeout(r, 500));
+  }
+  statusEl.textContent = 'Envio concluído. Confira a planilha.';
+};
 
 mostrarLista();
 </script>
