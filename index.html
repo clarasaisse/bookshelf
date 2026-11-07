@@ -173,34 +173,53 @@ function paisDaEditora(isbn) {
 
 // ---------- Nome do país -> código ISO (para pintar o mapa) ----------
 
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 function normalizar(texto) {
   return (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-// Monta um dicionário: nome em português -> código de 2 letras
+// Dicionário: nome (pt ou en, sem acento) -> código de 2 letras
 const nomeParaIso = {};
 (function montarDicionario() {
-  const dn = new Intl.DisplayNames(['pt'], { type: 'region' });
-  for (const a of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-    for (const b of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-      const codigo = a + b;
-      const nome = dn.of(codigo);
-      if (nome && nome !== codigo) nomeParaIso[normalizar(nome)] = codigo;
+  for (const idioma of ['pt', 'en']) {
+    const dn = new Intl.DisplayNames([idioma], { type: 'region' });
+    for (const a of LETRAS) {
+      for (const b of LETRAS) {
+        const codigo = a + b;
+        const nome = dn.of(codigo);
+        if (nome && nome !== codigo) nomeParaIso[normalizar(nome)] = codigo;
+      }
     }
   }
+  // Apelidos comuns em nomes de autores (Wikidata) e de mapas
+  const apelidos = {
+    'eua': 'US', 'usa': 'US', 'estados unidos da america': 'US',
+    'united states of america': 'US', 'inglaterra': 'GB', 'escocia': 'GB',
+    'pais de gales': 'GB', 'irlanda do norte': 'GB',
+    'coreia do sul': 'KR', 'coreia do norte': 'KP', 'republic of korea': 'KR',
+    'russia': 'RU', 'ira': 'IR', 'siria': 'SY', 'turquia': 'TR', 'turkiye': 'TR',
+    'republica tcheca': 'CZ', 'czechia': 'CZ', 'vietna': 'VN', 'bolivia': 'BO',
+    'venezuela': 'VE', 'tanzania': 'TZ', 'congo': 'CD', 'republica democratica do congo': 'CD',
+    'democratic republic of the congo': 'CD', 'myanmar': 'MM', 'birmania': 'MM',
+    'macedonia do norte': 'MK', 'north macedonia': 'MK', 'eslovaquia': 'SK'
+  };
+  Object.assign(nomeParaIso, apelidos);
 })();
 
 function isoDoNome(nome) {
   return nomeParaIso[normalizar(nome)] || null;
 }
 
-// Pega o código ISO de 2 letras de uma feature do GeoJSON
+// Descobre o código ISO de 2 letras de uma feature do mapa
 function isoDaFeature(feature) {
-  const props = feature.properties || {};
-  for (const valor of Object.values(props)) {
-    if (typeof valor === 'string' && /^[A-Z]{2}$/.test(valor)) return valor;
+  const p = feature.properties || {};
+  const candidatos = [p.ISO_A2, p.iso_a2, p['ISO3166-1-Alpha-2'], p.ISO_A2_EH];
+  for (const c of candidatos) {
+    if (typeof c === 'string' && /^[A-Z]{2}$/.test(c)) return c;
   }
-  return null;
+  // Se o arquivo não trouxer o código, usa o nome do país
+  return isoDoNome(p.name || p.ADMIN || p.NAME || '');
 }
 
 // ---------- Busca do livro ----------
@@ -319,6 +338,8 @@ function estiloPais(feature) {
 async function carregarMapa() {
   try {
     const geo = await (await fetch(URL_PAISES)).json();
+    const semCodigo = geo.features.filter(f => !isoDaFeature(f)).map(f => f.properties.name || f.properties.ADMIN);
+    console.log('Países do mapa sem correspondência:', semCodigo);
     camadaPaises = L.geoJSON(geo, {
       style: estiloPais,
       onEachFeature: (feature, layer) => {
